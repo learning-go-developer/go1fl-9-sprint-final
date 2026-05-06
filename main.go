@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"math"
 	"math/rand/v2"
 	"slices"
 	"sync"
@@ -78,17 +77,16 @@ func generateRandomElements(size int) []int {
 	return result
 }
 
-// Maximum returns the largest element in the provided slice of integers.
+// maximum finds the largest integer in the given slice by processing data in parallel.
 //
-// It uses a concurrent approach by splitting the slice into multiple chunks
-// processed by separate goroutines. The number of concurrent workers is
-// determined by the CHUNKS constant. For small datasets (less than 1000
-// elements), it defaults to single-threaded execution to avoid goroutine
-// overhead.
+// The function partitions the slice into segments and assigns each to a separate goroutine
+// to leverage multi-core efficiency. For small slices (less than 1000 elements), 
+// it defaults to a single-threaded execution to avoid goroutine overhead.
 //
-// If the input slice is empty, the function returns 0.
-// If the slice contains negative numbers and is not empty, the result
-// will be the maximum value found.
+// It handles edge cases safely: 
+// - Returns 0 for empty slices.
+// - Correctly identifies the maximum in slices containing negative numbers or MinInt.
+// - Prevents deadlocks by tracking the exact number of active workers.
 func maximum(data []int) int {
 	size := len(data)
 
@@ -104,6 +102,8 @@ func maximum(data []int) int {
 	// Канал для сбора локальных максимумов от каждой горутины
 	maxChan := make(chan int, numWorkers)
 
+	activeWorkers := 0 // for calculate real run gorutines
+
 	for i := 0; i < numWorkers; i++ {
 		start := i * chunkSize
 		if start >= size {
@@ -114,20 +114,19 @@ func maximum(data []int) int {
 			end = size
 		}
 
+		activeWorkers++ // Увеличиваем счетчик
 		// Запускаем горутину на свой кусок данных
 		go func(s, e int) {
-			if s >= size {
-				maxChan <- -1 // defender edge case
-				return
-			}
 			// Каждая горутина ищет максимум в своем куске (в один поток)
 			maxChan <- slices.Max(data[s:e])
 		}(start, end)
 	}
 
 	// Собираем результаты и находим финальный максимум
-	finalMax := math.MinInt // set minimum int number
-	for i := 0; i < numWorkers; i++ {
+	// Получаем первый результат
+	finalMax := <-maxChan // defens to "максимально возможное отрицательное число"
+	// Получаем остальные результаты
+	for i := 1; i < activeWorkers; i++ {
 		localMax := <-maxChan
 		if localMax > finalMax {
 			finalMax = localMax
