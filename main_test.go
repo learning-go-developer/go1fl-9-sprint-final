@@ -14,6 +14,7 @@ var (
 
 // command run test: 'go test . -v'
 // command run test with ingnore cache: 'go test -v -count=1'
+// command check area code test 'go test -cover'
 
 // TestGenerateRandomElements validates the logic of random element generation.
 // It covers standard cases, boundary conditions, and performance stability.
@@ -29,8 +30,8 @@ func TestGenerateRandomElements(t *testing.T) {
 		assert.Equal(t, nNormal, len(result))
 
 		for _, val := range result {
-			// Проверяем, что числа в диапазоне [0, 100)
-			assert.True(t, val >= 0 && val < 100, "Число вне диапазона: %d", val)
+			// Проверяем, что числа в диапазоне [0, nLarge)
+			assert.True(t, val >= 0 && val < nLarge, "Число вне диапазона: %d", val)
 		}
 	})
 
@@ -71,4 +72,84 @@ func BenchmarkGenerateRandomElements(b *testing.B) {
 	}
 	// Записываем в глобальную после цикла, чтобы компилятор не удалил вызов
 	result = r
+}
+
+// TestMaximum runs table-driven tests to verify the correctness of the maximum function.
+// It covers various scenarios including positive and negative numbers, identical elements,
+// single-element slices, empty slices, and edge cases related to concurrent processing
+// such as small input sizes and inputs not perfectly divisible by the number of workers.
+func TestMaximum(t *testing.T) {
+	// Описываем таблицу тестовых случаев
+	tests := []struct {
+		name     string // название теста
+		input    []int  // что подаем на вход
+		expected int    // что ожидаем на выходе
+	}{
+		{
+			name:     "Положительные числа",
+			input:    []int{1, 5, 3, 9, 2},
+			expected: 9,
+		},
+		{
+			name:     "Отрицательные числа",
+			input:    []int{-10, -5, -20, -2},
+			expected: -2,
+		},
+		{
+			name:     "Одинаковые числа",
+			input:    []int{7, 7, 7, 7},
+			expected: 7,
+		},
+		{
+			name:     "Один элемент",
+			input:    []int{42},
+			expected: 42,
+		},
+		{
+			name:     "Пустой слайс",
+			input:    []int{},
+			expected: 0,
+		},
+		{
+			name: "Размер меньше порога (однопоточный режим)",
+			input: func() []int {
+				res := make([]int, 500)
+				res[250] = 100
+				return res
+			}(),
+			expected: 100,
+		},
+		{
+			name:  "Размер не кратный количеству воркеров",
+			input: []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
+			// Если CHUNKS=8, проверится логика "остатка"
+			expected: 10,
+		},
+	}
+
+	// Проходим по всем тестам
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := maximum(tt.input)
+			assert.Equal(t, tt.expected, result, "Ожидалось другое значение для теста: %s", tt.name)
+		})
+	}
+}
+
+// BenchmarkMaximum measures the performance of the maximum function using a large dataset.
+// It pre-allocates a slice of size nLarge and resets the timer to ensure that only 
+// the execution time of the maximum function is recorded. This is used to evaluate 
+// the efficiency of the parallel processing implementation.
+func BenchmarkMaximum(b *testing.B) {
+	// Подготовка данных
+	data := make([]int, nLarge)
+	for i := range data {
+		data[i] = i
+	}
+
+	b.ResetTimer() // Сбрасываем таймер, чтобы не учитывать время подготовки данных
+
+	for i := 0; i < b.N; i++ {
+		maximum(data)
+	}
 }
