@@ -80,10 +80,10 @@ func generateRandomElements(size int) []int {
 // maximum finds the largest integer in the given slice by processing data in parallel.
 //
 // The function partitions the slice into segments and assigns each to a separate goroutine
-// to leverage multi-core efficiency. For small slices (less than 1000 elements), 
+// to leverage multi-core efficiency. For small slices (less than 1000 elements),
 // it defaults to a single-threaded execution to avoid goroutine overhead.
 //
-// It handles edge cases safely: 
+// It handles edge cases safely:
 // - Returns 0 for empty slices.
 // - Correctly identifies the maximum in slices containing negative numbers or MinInt.
 // - Prevents deadlocks by tracking the exact number of active workers.
@@ -136,15 +136,71 @@ func maximum(data []int) int {
 	return finalMax
 }
 
-/*
-// maxChunks returns the maximum number of elements in a chunks.
+// maxChunks finds the maximum value in a slice by dividing it into exactly CHUNKS segments.
+//
+// The function uses a sync.WaitGroup to synchronize concurrent workers and stores
+// intermediate results in a temporary slice. It includes safety checks to prevent
+// panics when dealing with empty segments, which can occur if the input slice
+// length is smaller than the number of chunks.
+//
+// Edge cases:
+// - Returns 0 if the input slice is empty.
+// - Safely handles cases where some chunks contain no data.
 func maxChunks(data []int) int {
-	// ваш код здесь
+	size := len(data)
+
+	if size == 0 {
+		return 0
+	}
+
+	// Слайс для хранения максимумов из каждой части (8 элементов)
+	chunkMaxes := make([]int, CHUNKS)
+	chunkSize := size / CHUNKS
+
+	var wg sync.WaitGroup
+
+	for i := 0; i < CHUNKS; i++ {
+		start := i * chunkSize
+		var end int
+		if i == CHUNKS-1 {
+			// Последний CHUNKS забирает всё до конца (на случай, если длина не делится на 8 нацело)
+			end = size
+		} else {
+			end = start + chunkSize
+		}
+
+		// Если данных меньше, чем чанков, и индекс вышел за пределы
+		if start >= size {
+			// просто пропускаем, в слайсе уже будут нули
+			continue
+		}
+
+		wg.Add(1)
+		// Запускаем горутину, передавая индекс i для записи результата
+		go func(s, e, index int) {
+			defer wg.Done()
+
+			// Извлекаем сегмент данных
+			segment := data[s:e]
+
+			// ПРОВЕРКА: если сегмент пустой, slices.Max упадет.
+			if len(segment) == 0 {
+				chunkMaxes[index] = 0
+				return
+			}
+
+			chunkMaxes[index] = slices.Max(segment)
+		}(start, end, i)
+	}
+
+	wg.Wait()
+
+	return slices.Max(chunkMaxes)
 }
-*/
 
 func main() {
 	start := time.Now()
+
 	fmt.Printf("Генерируем %d целых чисел\n", SIZE)
 	data := generateRandomElements(SIZE)
 
@@ -152,15 +208,18 @@ func main() {
 	fmt.Printf("Время выполнения: %v\n", time.Since(start))
 
 	start = time.Now()
+
 	fmt.Println("Ищем максимальное значение в один поток")
 	max := maximum(data)
+
 	duration := time.Since(start)
-
 	fmt.Printf("Максимальное значение элемента: %d\nВремя поиска: %v\n", max, duration)
-	/*
-		fmt.Printf("Ищем максимальное значение в %d потоков", CHUNKS)
-		// ваш код здесь
 
-		fmt.Printf("Максимальное значение элемента: %d\nВремя поиска: %d ms\n", max, elapsed)
-	*/
+	start = time.Now()
+
+	fmt.Printf("Ищем максимальное значение в %d потоков", CHUNKS)
+	max = maxChunks(data)
+
+	duration = time.Since(start)
+	fmt.Printf("Максимальное значение элемента: %d\nВремя поиска: %v\n", max, duration)
 }

@@ -137,8 +137,8 @@ func TestMaximum(t *testing.T) {
 }
 
 // BenchmarkMaximum measures the performance of the maximum function using a large dataset.
-// It pre-allocates a slice of size nLarge and resets the timer to ensure that only 
-// the execution time of the maximum function is recorded. This is used to evaluate 
+// It pre-allocates a slice of size nLarge and resets the timer to ensure that only
+// the execution time of the maximum function is recorded. This is used to evaluate
 // the efficiency of the parallel processing implementation.
 func BenchmarkMaximum(b *testing.B) {
 	// Подготовка данных
@@ -151,5 +151,75 @@ func BenchmarkMaximum(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		maximum(data)
+	}
+}
+
+// TestMaxChunks verifies the correctness of the chunk-based maximum search.
+// It covers edge cases where the input length is less than the number of chunks,
+// empty inputs, and inputs where the size is not perfectly divisible by CHUNKS.
+func TestMaxChunks(t *testing.T) {
+	// Описываем таблицу тестовых случаев
+	tests := []struct {
+		name     string
+		input    []int
+		expected int
+	}{
+		{
+			name:     "Положительные числа",
+			input:    []int{10, 20, 30, 40, 50, 60, 70, 80, 90, 100},
+			expected: 100,
+		},
+		{
+			name:     "Отрицательные числа",
+			input:    []int{-5, -10, -2, -8, -15, -3, -7, -1},
+			expected: -1,
+		},
+		{
+			name:     "Слайс меньше 8 элементов (некоторые чанки пустые)",
+			input:    []int{5, 12, 3},
+			expected: 12,
+		},
+		{
+			name:     "Один элемент",
+			input:    []int{42},
+			expected: 42,
+		},
+		{
+			name:     "Пустой слайс",
+			input:    []int{},
+			expected: 0,
+		},
+		{
+			name: "Большой слайс, не кратный 8",
+			input: func() []int {
+				res := make([]int, 1003) // 1003 / 8 даст остаток
+				res[1002] = 999
+				return res
+			}(),
+			expected: 999,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := maxChunks(tt.input)
+			assert.Equal(t, tt.expected, result, "Тест '%s' провален", tt.name)
+		})
+	}
+}
+
+// BenchmarkMaxChunks evaluates the performance of the WaitGroup-based
+// concurrent maximum search using a large pre-allocated dataset.
+func BenchmarkMaxChunks(b *testing.B) {
+	// Подготовка данных (используем тот же nLarge, что и в прошлый раз)
+	data := make([]int, nLarge)
+	for i := range data {
+		data[i] = i
+	}
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		maxChunks(data)
 	}
 }
