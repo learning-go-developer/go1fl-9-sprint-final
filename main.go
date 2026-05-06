@@ -199,27 +199,25 @@ func maxChunks(data []int) int {
 }
 
 func main() {
-	start := time.Now()
-
-	fmt.Printf("Генерируем %d целых чисел\n", SIZE)
+	fmt.Printf("Генерируем %d целых положительных чисел...\n", SIZE)
+	genStart := time.Now()
 	data := generateRandomElements(SIZE)
+	genDuration := time.Since(genStart)
+	fmt.Printf("Готово! Сгенерировано %d элементов за %v\n\n", len(data), genDuration)
 
-	fmt.Printf("Готово! Сгенерировано %d элементов\n", len(data))
-	fmt.Printf("Время выполнения: %v\n", time.Since(start))
+	fmt.Println("=== Поиск через функцию maximum (каналы) ===")
+	startMax := time.Now()
+	maxVal := maximum(data)
+	durationMax := time.Since(startMax)
 
-	start = time.Now()
+	fmt.Printf("Максимальное значение: %d\n", maxVal)
+	fmt.Printf("Время поиска: %d мкс\n\n", durationMax.Microseconds())
 
-	fmt.Println("Ищем максимальное значение в один поток")
-	max := maximum(data)
+	fmt.Printf("=== Поиск через функцию maxChunks (%d воркеров, WaitGroup) ===\n", CHUNKS)
+	startChunks := time.Now()
+	maxChunksVal := maxChunks(data)
+	durationChunks := time.Since(startChunks)
 
-	duration := time.Since(start)
-	fmt.Printf("Максимальное значение элемента: %d\nВремя поиска: %v\n", max, duration)
-
-	start = time.Now()
-
-	fmt.Printf("Ищем максимальное значение в %d потоков", CHUNKS)
-	max = maxChunks(data)
-
-	duration = time.Since(start)
-	fmt.Printf("Максимальное значение элемента: %d\nВремя поиска: %v\n", max, duration)
+	fmt.Printf("Максимальное значение: %d\n", maxChunksVal)
+	fmt.Printf("Время поиска: %d мкс\n", durationChunks.Microseconds())
 }
