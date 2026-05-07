@@ -13,24 +13,12 @@ const (
 	CHUNKS = 8
 )
 
-// generateRandomElements creates a slice of random integers using parallel processing.
-// Each integer is in the range [0, 100).
+// generateRandomElements creates a slice of the given size and populates it
+// with pseudo-random integers in the range [0, size) using math/rand/v2.
 //
-// The function automatically partitions the workload across multiple goroutines
-// based on the number of available CPU cores (runtime.NumCPU).
-//
-// Efficiency notes:
-//   - It pre-allocates the result slice to avoid multiple memory reallocations.
-//   - It uses a sync.WaitGroup to coordinate concurrent writes to different
-//     segments of the slice.
-//   - It utilizes math/rand/v2 for improved performance and modern random
-//     number generation algorithms.
-//
-// Parameters:
-//   - size: The total number of elements to generate.
-//
-// Returns:
-//   - A slice of integers if size > 0; otherwise, returns nil.
+// If size is less than or equal to 0, it returns nil.
+// The function uses a sequential loop to ensure optimal cache performance
+// and minimal memory overhead.
 func generateRandomElements(size int) []int {
 	if size <= 0 {
 		return nil
@@ -38,159 +26,98 @@ func generateRandomElements(size int) []int {
 
 	result := make([]int, size)
 
-	numWorkers := CHUNKS
-	if size < 1000 { // TODO for test perfomance theard one without set numWorkers
-		numWorkers = 1
+	for i := range size {
+		result[i] = rand.IntN(size)
 	}
 
-	var wg sync.WaitGroup
-	// Считаем размер порции данных для одной горутины
-	chunkSize := (size + numWorkers - 1) / numWorkers
-
-	for i := range numWorkers {
-		start := i * chunkSize
-		if start >= size {
-			break
-		}
-
-		end := start + chunkSize
-		if end > size {
-			end = size
-		}
-
-		// last gorutine set remainder for end
-		if i == numWorkers-1 {
-			end = size
-		}
-
-		wg.Add(1)
-		go func(s, e int) {
-			defer wg.Done()
-
-			for j := s; j < e; j++ {
-				result[j] = rand.IntN(size) // use rand from v2 version math package with new algoritms
-			}
-		}(start, end)
-	}
-
-	wg.Wait()
 	return result
 }
 
-// maximum finds the largest integer in the given slice by processing data in parallel.
+// maximum finds the largest integer in the slice using an optimized hybrid approach.
 //
-// The function partitions the slice into segments and assigns each to a separate goroutine
-// to leverage multi-core efficiency. For small slices (less than 1000 elements),
-// it defaults to a single-threaded execution to avoid goroutine overhead.
+// The function selects the most efficient execution path based on input size:
+//   - If the slice is empty, it returns 0 as a safe default.
+//   - For small datasets (less than 1,000 elements), it uses a fast sequential
+//     search via slices.Max to avoid goroutine orchestration overhead.
+//   - For large datasets, it delegates the task to maxChunks for high-performance
+//     parallel processing across multiple CPU cores.
 //
-// It handles edge cases safely:
-// - Returns 0 for empty slices.
-// - Correctly identifies the maximum in slices containing negative numbers or MinInt.
-// - Prevents deadlocks by tracking the exact number of active workers.
+// This strategy ensures minimal latency for small inputs while maintaining
+// maximum throughput for large-scale data processing.
 func maximum(data []int) int {
-	size := len(data)
-
 	if len(data) == 0 {
 		return 0
 	}
 
-	numWorkers := CHUNKS
-	if size < 1000 {
-		numWorkers = 1
-	}
-	chunkSize := (size + numWorkers - 1) / numWorkers
-	// Канал для сбора локальных максимумов от каждой горутины
-	maxChan := make(chan int, numWorkers)
-
-	activeWorkers := 0 // for calculate real run gorutines
-
-	for i := 0; i < numWorkers; i++ {
-		start := i * chunkSize
-		if start >= size {
-			break // Если данных больше нет, новые горутины просто не создаем
-		}
-		end := start + chunkSize
-		if end > size {
-			end = size
-		}
-
-		activeWorkers++ // Увеличиваем счетчик
-		// Запускаем горутину на свой кусок данных
-		go func(s, e int) {
-			// Каждая горутина ищет максимум в своем куске (в один поток)
-			maxChan <- slices.Max(data[s:e])
-		}(start, end)
+	if len(data) < 1000 {
+		return slices.Max(data)
 	}
 
-	// Собираем результаты и находим финальный максимум
-	// Получаем первый результат
-	finalMax := <-maxChan // defens to "максимально возможное отрицательное число"
-	// Получаем остальные результаты
-	for i := 1; i < activeWorkers; i++ {
-		localMax := <-maxChan
-		if localMax > finalMax {
-			finalMax = localMax
-		}
-	}
-
-	return finalMax
+	return maxChunks(data)
 }
 
-// maxChunks finds the maximum value in a slice by dividing it into exactly CHUNKS segments.
+// maxChunks finds the maximum value in a slice by dividing it into a fixed
+// number of segments (CHUNKS) and processing them concurrently.
 //
-// The function uses a sync.WaitGroup to synchronize concurrent workers and stores
-// intermediate results in a temporary slice. It includes safety checks to prevent
-// panics when dealing with empty segments, which can occur if the input slice
-// length is smaller than the number of chunks.
+// The function splits the input slice into CHUNKS segments, spawns a goroutine
+// for each segment to find its local maximum, and then identifies the overall
+// maximum among these local results.
+//
+// Concurrency control:
+//   - Uses sync.WaitGroup to ensure all concurrent workers finish before returning.
+//   - Results from each goroutine are stored in a pre-allocated slice to avoid race conditions.
 //
 // Edge cases:
-// - Returns 0 if the input slice is empty.
-// - Safely handles cases where some chunks contain no data.
+//   - If the input slice is empty, it returns 0.
+//   - If the input size is smaller than CHUNKS, it gracefully handles empty segments.
+//   - Correctly handles negative numbers by initializing intermediate results
+//     with the first element of the input data.
+//
+// Performance note:
+// This approach is effective for very large slices where the overhead of
+// goroutine creation is outweighed by the benefits of parallel CPU utilization.
 func maxChunks(data []int) int {
 	size := len(data)
-
 	if size == 0 {
 		return 0
 	}
 
-	// Слайс для хранения максимумов из каждой части (8 элементов)
 	chunkMaxes := make([]int, CHUNKS)
+
+	for i := range chunkMaxes {
+		chunkMaxes[i] = data[0]
+	}
+
 	chunkSize := size / CHUNKS
+
+	if chunkSize == 0 {
+		chunkSize = 1
+	}
 
 	var wg sync.WaitGroup
 
-	for i := 0; i < CHUNKS; i++ {
+	for i := range CHUNKS {
 		start := i * chunkSize
-		var end int
-		if i == CHUNKS-1 {
-			// Последний CHUNKS забирает всё до конца (на случай, если длина не делится на 8 нацело)
-			end = size
-		} else {
-			end = start + chunkSize
-		}
 
-		// Если данных меньше, чем чанков, и индекс вышел за пределы
 		if start >= size {
-			// просто пропускаем, в слайсе уже будут нули
 			continue
 		}
 
+		end := start + chunkSize
+
+		if i == CHUNKS-1 || end > size {
+			end = size
+		}
+
+		segment := data[start:end]
+
 		wg.Add(1)
-		// Запускаем горутину, передавая индекс i для записи результата
-		go func(s, e, index int) {
+		go func(s []int, index int) {
 			defer wg.Done()
-
-			// Извлекаем сегмент данных
-			segment := data[s:e]
-
-			// ПРОВЕРКА: если сегмент пустой, slices.Max упадет.
-			if len(segment) == 0 {
-				chunkMaxes[index] = 0
-				return
+			if len(s) > 0 {
+				chunkMaxes[index] = slices.Max(s)
 			}
-
-			chunkMaxes[index] = slices.Max(segment)
-		}(start, end, i)
+		}(segment, i)
 	}
 
 	wg.Wait()
@@ -199,25 +126,18 @@ func maxChunks(data []int) int {
 }
 
 func main() {
-	fmt.Printf("Генерируем %d целых положительных чисел...\n", SIZE)
-	genStart := time.Now()
+	fmt.Printf("Генерируем %d целых чисел\n", SIZE)
 	data := generateRandomElements(SIZE)
-	genDuration := time.Since(genStart)
-	fmt.Printf("Готово! Сгенерировано %d элементов за %v\n\n", len(data), genDuration)
 
-	fmt.Println("=== Поиск через функцию maximum (каналы) ===")
+	fmt.Println("Ищем максимальное значение в один поток")
 	startMax := time.Now()
 	maxVal := maximum(data)
 	durationMax := time.Since(startMax)
+	fmt.Printf("Максимальное значение: %d\nВремя поиска: %d мкс\n", maxVal, durationMax.Microseconds())
 
-	fmt.Printf("Максимальное значение: %d\n", maxVal)
-	fmt.Printf("Время поиска: %d мкс\n\n", durationMax.Microseconds())
-
-	fmt.Printf("=== Поиск через функцию maxChunks (%d воркеров, WaitGroup) ===\n", CHUNKS)
+	fmt.Printf("Ищем максимальное значение в %d потоков\n", CHUNKS)
 	startChunks := time.Now()
 	maxChunksVal := maxChunks(data)
 	durationChunks := time.Since(startChunks)
-
-	fmt.Printf("Максимальное значение: %d\n", maxChunksVal)
-	fmt.Printf("Время поиска: %d мкс\n", durationChunks.Microseconds())
+	fmt.Printf("Максимальное значение: %d\nВремя поиска: %d мкс\n", maxChunksVal, durationChunks.Microseconds())
 }
