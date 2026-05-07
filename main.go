@@ -11,6 +11,7 @@ import (
 const (
 	SIZE   = 100_000_000
 	CHUNKS = 8
+	minBatchSize = 1_000
 )
 
 // generateRandomElements creates a slice of the given size and populates it
@@ -49,7 +50,7 @@ func maximum(data []int) int {
 		return 0
 	}
 
-	if len(data) < 1000 {
+	if len(data) < minBatchSize {
 		return slices.Max(data)
 	}
 
