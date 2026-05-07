@@ -58,13 +58,12 @@ func maximum(data []int) int {
 		return 0
 	}
 
-	if size < 1000 { // defence small size
+	if size < 1000 {
 		return max(data)
 	}
 
 	numWorkers := CHUNKS
 	chunkSize := (size + numWorkers - 1) / numWorkers
-	// Канал для сбора локальных максимумов от каждой горутины
 	results := make([]int, numWorkers)
 
 	var wg sync.WaitGroup
@@ -72,7 +71,7 @@ func maximum(data []int) int {
 	for i := 0; i < numWorkers; i++ {
 		start := i * chunkSize
 		if start >= size {
-			break // Если данных больше нет, новые горутины просто не создаем
+			break
 		}
 		end := start + chunkSize
 		if end > size {
@@ -80,10 +79,8 @@ func maximum(data []int) int {
 		}
 
 		wg.Add(1)
-		// Запускаем горутину на свой кусок данных
 		go func(s, e, idx int) {
 			defer wg.Done()
-			// Каждая горутина ищет максимум в своем куске (в один поток)
 			results[idx] = max(data[s:e])
 		}(start, end, i)
 	}
