@@ -3,15 +3,13 @@ package main
 import (
 	"fmt"
 	"math/rand/v2"
-	"slices"
 	"sync"
 	"time"
 )
 
 const (
-	SIZE         = 100_000_000
-	CHUNKS       = 8
-	minBatchSize = 1_000
+	SIZE   = 100_000_000
+	CHUNKS = 8
 )
 
 // generateRandomElements creates a slice of the given size and populates it
@@ -34,49 +32,26 @@ func generateRandomElements(size int) []int {
 	return result
 }
 
-// maximum finds the largest integer in the slice using an optimized hybrid approach.
-//
-// The function selects the most efficient execution path based on input size:
-//   - If the slice is empty, it returns 0 as a safe default.
-//   - For small datasets (less than 1,000 elements), it uses a fast sequential
-//     search via slices.Max to avoid goroutine orchestration overhead.
-//   - For large datasets, it delegates the task to maxChunks for high-performance
-//     parallel processing across multiple CPU cores.
-//
-// This strategy ensures minimal latency for small inputs while maintaining
-// maximum throughput for large-scale data processing.
+// Maximum returns the largest element in the provided slice of integers.
+// If the slice is empty, it returns 0.
 func maximum(data []int) int {
-	if len(data) == 0 {
+	if len(data) <= 0 {
 		return 0
 	}
 
-	if len(data) < minBatchSize {
-		return slices.Max(data)
+	tempCheck := data[0]
+	for _, v := range data {
+		if v > tempCheck {
+			tempCheck = v
+		}
 	}
 
-	return maxChunks(data)
+	return tempCheck
 }
 
-// maxChunks finds the maximum value in a slice by dividing it into a fixed
-// number of segments (CHUNKS) and processing them concurrently.
-//
-// The function splits the input slice into CHUNKS segments, spawns a goroutine
-// for each segment to find its local maximum, and then identifies the overall
-// maximum among these local results.
-//
-// Concurrency control:
-//   - Uses sync.WaitGroup to ensure all concurrent workers finish before returning.
-//   - Results from each goroutine are stored in a pre-allocated slice to avoid race conditions.
-//
-// Edge cases:
-//   - If the input slice is empty, it returns 0.
-//   - If the input size is smaller than CHUNKS, it gracefully handles empty segments.
-//   - Correctly handles negative numbers by initializing intermediate results
-//     with the first element of the input data.
-//
-// Performance note:
-// This approach is effective for very large slices where the overhead of
-// goroutine creation is outweighed by the benefits of parallel CPU utilization.
+// maxChunks calculates the maximum value in the data slice by splitting it
+// into multiple chunks and processing them concurrently using goroutines.
+// It returns 0 if the input slice is empty.
 func maxChunks(data []int) int {
 	size := len(data)
 	if size == 0 {
@@ -116,14 +91,14 @@ func maxChunks(data []int) int {
 		go func(s []int, index int) {
 			defer wg.Done()
 			if len(s) > 0 {
-				chunkMaxes[index] = slices.Max(s)
+				chunkMaxes[index] = maximum(s)
 			}
 		}(segment, i)
 	}
 
 	wg.Wait()
 
-	return slices.Max(chunkMaxes)
+	return maximum(chunkMaxes)
 }
 
 func main() {
