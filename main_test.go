@@ -74,6 +74,62 @@ func BenchmarkGenerateRandomElements(b *testing.B) {
 	result = r
 }
 
+// TestMax runs table-driven tests to verify the correctness of the basic
+// sequential maximum search implementation.
+// It ensures the function handles various scenarios including positive and
+// negative integers, single-element slices, and empty inputs correctly.
+func TestMax(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    []int
+		expected int
+	}{
+		{
+			name:     "Положительные числа",
+			input:    []int{1, 5, 3, 9, 2},
+			expected: 9,
+		},
+		{
+			name:     "Отрицательные числа",
+			input:    []int{-10, -5, -20, -1},
+			expected: -1,
+		},
+		{
+			name:     "Пустой слайс",
+			input:    []int{},
+			expected: 0,
+		},
+		{
+			name:     "Один элемент",
+			input:    []int{42},
+			expected: 42,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := max(tt.input)
+			assert.Equal(t, tt.expected, result, "Ошибка в тесте: %s", tt.name)
+		})
+	}
+}
+
+// BenchmarkMax measures the performance of the sequential max function.
+// This serves as a baseline to compare against parallel implementations.
+func BenchmarkMax(b *testing.B) {
+	// Подготовка данных
+	data := make([]int, nLarge)
+	for i := range data {
+		data[i] = i
+	}
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		max(data)
+	}
+}
+
 // TestMaximum runs table-driven tests to verify the correctness of the maximum function.
 // It covers various scenarios including positive and negative numbers, identical elements,
 // single-element slices, empty slices, and edge cases related to concurrent processing
