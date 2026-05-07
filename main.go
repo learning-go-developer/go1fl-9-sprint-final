@@ -9,8 +9,8 @@ import (
 )
 
 const (
-	SIZE   = 100_000_000
-	CHUNKS = 8
+	SIZE         = 100_000_000
+	CHUNKS       = 8
 	minBatchSize = 1_000
 )
 
