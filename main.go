@@ -32,21 +32,65 @@ func generateRandomElements(size int) []int {
 	return result
 }
 
-// Maximum returns the largest element in the provided slice of integers.
+// max returns the maximum value in the data slice.
 // If the slice is empty, it returns 0.
-func maximum(data []int) int {
+func max(data []int) int {
 	if len(data) <= 0 {
 		return 0
 	}
 
-	tempCheck := data[0]
+	result := data[0]
 	for _, v := range data {
-		if v > tempCheck {
-			tempCheck = v
+		if v > result {
+			result = v
 		}
 	}
 
-	return tempCheck
+	return result
+}
+
+// maximum returns the largest integer in the slice.
+// For large slices, it processes data in parallel using goroutines.
+// If the slice is empty, it returns 0.
+func maximum(data []int) int {
+	size := len(data)
+	if len(data) == 0 {
+		return 0
+	}
+
+	if size < 1000 { // defence small size
+		return max(data)
+	}
+
+	numWorkers := CHUNKS
+	chunkSize := (size + numWorkers - 1) / numWorkers
+	// Канал для сбора локальных максимумов от каждой горутины
+	results := make([]int, numWorkers)
+
+	var wg sync.WaitGroup
+
+	for i := 0; i < numWorkers; i++ {
+		start := i * chunkSize
+		if start >= size {
+			break // Если данных больше нет, новые горутины просто не создаем
+		}
+		end := start + chunkSize
+		if end > size {
+			end = size
+		}
+
+		wg.Add(1)
+		// Запускаем горутину на свой кусок данных
+		go func(s, e, idx int) {
+			defer wg.Done()
+			// Каждая горутина ищет максимум в своем куске (в один поток)
+			results[idx] = max(data[s:e])
+		}(start, end, i)
+	}
+
+	wg.Wait()
+
+	return max(results[:numWorkers])
 }
 
 // maxChunks calculates the maximum value in the data slice by splitting it
